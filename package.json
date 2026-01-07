@@ -1,0 +1,46 @@
+{
+  "name": "zotero-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Zotero integration with AI assistants - search, cite, and manage research references",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "zotero-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 0",
+    "lint": "echo \"Linting skipped\"",
+    "format": "echo \"Formatting skipped\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zotero-api-client": "^0.44.0",
+    "pdf-parse": "^2.4.5",
+    "zod": "^3.25.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pdf-parse": "^1.1.4",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.0"
+  },
+  "engines": {
+    "node": ">=20.16.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "zotero",
+    "citation",
+    "bibliography",
+    "research",
+    "ai",
+    "reference-management"
+  ],
+  "author": "Daniel Ostrow",
+  "license": "MIT"
+}
