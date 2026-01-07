@@ -40,7 +40,7 @@ npm install -g zotero-mcp-server
 
 ```bash
 git clone <repository-url>
-cd ZoteroMCP
+cd zotero-mcp-server
 npm install
 npm run build
 ```
