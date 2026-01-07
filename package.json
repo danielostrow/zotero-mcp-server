@@ -7,6 +7,12 @@
   "bin": {
     "zotero-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "QUICKSTART.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
@@ -14,7 +20,8 @@
     "test": "tsx tests/integration.test.ts",
     "test:verbose": "tsx tests/integration.test.ts --verbose",
     "lint": "echo \"Linting skipped\"",
-    "format": "echo \"Formatting skipped\""
+    "format": "echo \"Formatting skipped\"",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -43,5 +50,13 @@
     "reference-management"
   ],
   "author": "Daniel Ostrow",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielostrow/zotero-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/danielostrow/zotero-mcp-server/issues"
+  },
+  "homepage": "https://github.com/danielostrow/zotero-mcp-server#readme"
 }
