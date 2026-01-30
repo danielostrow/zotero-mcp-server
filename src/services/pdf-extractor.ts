@@ -4,6 +4,11 @@
  */
 
 import type { ZoteroClient } from './zotero-client.js';
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 export interface ExtractedPdfText {
   content: string;
@@ -22,7 +27,7 @@ export class PDFExtractor {
    * Extract text from a PDF attachment
    * Two-phase approach:
    * 1. Try Zotero's indexed full-text (fastest)
-   * 2. If not available, would download and parse PDF (not implemented yet)
+   * 2. If not available, check if it's a local file and parse it
    */
   async extractText(
     itemKey: string,
@@ -59,17 +64,48 @@ export class PDFExtractor {
       };
     }
 
-    // Phase 2: PDF not indexed in Zotero
-    // For now, return an error message
-    // In a full implementation, we would:
-    // 1. Download the PDF file using Zotero API
-    // 2. Parse it with pdf-parse
-    // 3. Extract the requested pages
-    // 4. Clean up temporary files
+    // Phase 2: Try to read local file
+    try {
+      const item = await this.zoteroClient.getItem(itemKey) as any;
+      
+      // Check if it's a PDF attachment with a local path
+      // Note: zotero-api-client returns flattened object, properties are at root
+      if (
+        item.itemType === 'attachment' &&
+        item.contentType === 'application/pdf' &&
+        item.path
+      ) {
+        // Resolve path (Zotero sometimes stores it with 'attachments:' prefix)
+        let filePath = item.path;
+        if (filePath.startsWith('attachments:')) {
+          // This would need the base directory which we might not have
+          // But for linked files (linkMode: 'linked_file'), path is usually absolute
+        }
+        
+        // If it looks like an absolute path, try to read it
+        if (path.isAbsolute(filePath)) {
+          const buffer = await fs.readFile(filePath);
+          const result = await this.parsePdfBuffer(buffer, pages);
+          return {
+            ...result,
+            info: {
+              ...result.info,
+              source: 'local-file',
+              path: filePath
+            }
+          };
+        }
+      }
+    } catch (err) {
+      console.error('Failed to read local PDF file:', err);
+      // Fall through to error
+    }
+
+    // Phase 3: Failed
     throw new Error(
       'PDF full-text not available. ' +
-        'The item may not have an attached PDF, or the PDF has not been indexed by Zotero yet. ' +
-        'To index PDFs, open Zotero desktop and let it index your attachments.'
+        'The item may not have an attached PDF, or the PDF has not been indexed by Zotero yet, ' +
+        'and the local file could not be accessed.'
     );
   }
 
@@ -79,37 +115,35 @@ export class PDFExtractor {
    */
   async parsePdfBuffer(
     buffer: Buffer,
-    pages?: { start?: number; end?: number }
+    _pages?: { start?: number; end?: number }
   ): Promise<ExtractedPdfText> {
-    // Dynamic import to avoid ESM issues
-    const pdfParse = (await import('pdf-parse')).default;
+    const pdfLib = require('pdf-parse');
+    
+    // Check if we have the class available (ESM/TS interop issue workaround)
+    const PDFParse = pdfLib.PDFParse || pdfLib.default || pdfLib;
 
-    const options: any = {};
-
-    if (pages) {
-      // pdf-parse supports page ranges
-      options.max = pages.end || undefined;
-      // Note: pdf-parse doesn't have a built-in way to skip pages from start
-      // We would need to handle this after extraction
+    if (typeof PDFParse !== 'function') {
+        throw new Error('pdf-parse library does not export a constructor/function');
     }
 
-    const data = await pdfParse(buffer, options);
-
-    let content = data.text;
-
-    // Handle start page if specified
-    if (pages && pages.start && pages.start > 1) {
-      // This is approximate - split by form feeds or estimate
-      const lines = content.split('\n');
-      const estimatedLinesPerPage = Math.ceil(lines.length / data.numpages);
-      const startLine = (pages.start - 1) * estimatedLinesPerPage;
-      content = lines.slice(startLine).join('\n');
+    try {
+      // It seems we need to instantiate it as a class in this environment
+      const parser = new PDFParse({ data: buffer });
+      const data = await parser.getText();
+      
+      let content = data.text;
+      
+      return {
+        content,
+        numPages: data.numpages,
+        info: {
+          ...data.info,
+          source: 'local-file-parsed'
+        },
+      };
+    } catch (e) {
+       console.error("PDF parsing error:", e);
+       throw e;
     }
-
-    return {
-      content,
-      numPages: data.numpages,
-      info: data.info,
-    };
   }
 }
