@@ -50,15 +50,15 @@ export async function searchItems(params: any, zoteroClient: ZoteroClient): Prom
               items: items.map((item) => ({
                 key: item.key,
                 version: item.version,
-                itemType: item.data.itemType,
-                title: item.data.title,
-                creators: item.data.creators,
-                date: item.data.date,
-                DOI: item.data.DOI,
-                url: item.data.url,
-                tags: item.data.tags,
-                collections: item.data.collections,
-                abstractNote: item.data.abstractNote,
+                itemType: item.data?.itemType,
+                title: item.data?.title,
+                creators: item.data?.creators,
+                date: item.data?.date,
+                DOI: item.data?.DOI,
+                url: item.data?.url,
+                tags: item.data?.tags,
+                collections: item.data?.collections,
+                abstractNote: item.data?.abstractNote,
               })),
             },
             null,
@@ -298,7 +298,7 @@ export async function manageCollections(params: any, zoteroClient: ZoteroClient)
         result = await zoteroClient.createCollection(validated.name!, validated.parentCollection);
         break;
       case 'delete':
-        await zoteroClient.deleteCollection(validated.collectionKey!);
+        await zoteroClient.deleteCollection(validated.collectionKey!, validated.version);
         result = { success: true, deleted: validated.collectionKey };
         break;
       default:
