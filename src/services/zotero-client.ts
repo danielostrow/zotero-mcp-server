@@ -163,8 +163,8 @@ export class ZoteroClient {
     }
 
     const template = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey).itemTemplate(itemType).get();
-      return response as ZoteroItemTemplate;
+      const response = await api(this.config.apiKey).template(itemType).get();
+      return response.getData() as ZoteroItemTemplate;
     });
 
     if (this.config.cacheEnabled) {
@@ -188,7 +188,8 @@ export class ZoteroClient {
         .post([itemData]);
 
       const results = response.getData();
-      return results.successful[0] as ZoteroItem;
+      // zotero-api-client returns an array for multi-write operations
+      return (Array.isArray(results) ? results[0] : results) as ZoteroItem;
     });
 
     // Invalidate search caches
@@ -203,14 +204,19 @@ export class ZoteroClient {
   /**
    * Update an existing item
    */
-  async updateItem(itemKey: string, itemData: any, _version: number): Promise<ZoteroItem> {
+  async updateItem(itemKey: string, itemData: any, version: number): Promise<ZoteroItem> {
     const { type, id } = this.getLibraryId();
 
     const updated = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
+      let request = api(this.config.apiKey)
         .library(type, id)
-        .items(itemKey)
-        .patch(itemData);
+        .items(itemKey);
+      
+      if (version) {
+        request = request.version(version);
+      }
+      
+      const response = await request.patch(itemData);
 
       return response.getData() as ZoteroItem;
     });
@@ -328,7 +334,8 @@ export class ZoteroClient {
         .post([collectionData]);
 
       const results = response.getData();
-      return results.successful[0] as ZoteroCollection;
+      // zotero-api-client returns an array for multi-write operations
+      return (Array.isArray(results) ? results[0] : results) as ZoteroCollection;
     });
 
     if (this.config.cacheEnabled) {
@@ -341,14 +348,19 @@ export class ZoteroClient {
   /**
    * Delete a collection
    */
-  async deleteCollection(collectionKey: string): Promise<void> {
+  async deleteCollection(collectionKey: string, version?: number): Promise<void> {
     const { type, id } = this.getLibraryId();
 
     await this.executeWithRetry(async () => {
-      await api(this.config.apiKey)
+      let request = api(this.config.apiKey)
         .library(type, id)
-        .collections(collectionKey)
-        .delete();
+        .collections(collectionKey);
+      
+      if (version) {
+        request = request.version(version);
+      }
+        
+      await request.delete();
     });
 
     if (this.config.cacheEnabled) {
