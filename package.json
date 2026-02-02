@@ -1,11 +1,11 @@
 {
-  "name": "zotero-mcp-server",
+  "name": "zotero-manager",
   "version": "0.1.0",
   "description": "MCP server for Zotero integration with AI assistants - search, cite, and manage research references",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "zotero-mcp": "dist/index.js"
+    "zotero-manager": "dist/index.js"
   },
   "files": [
     "dist",
@@ -26,13 +26,11 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zotero-api-client": "^0.44.0",
-    "pdf-parse": "^2.4.5",
     "zod": "^3.25.0",
     "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.7.2",
     "tsx": "^4.19.0"
   },
@@ -53,10 +51,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danielostrow/zotero-mcp-server.git"
+    "url": "git+https://github.com/danielostrow/zotero-manager.git"
   },
   "bugs": {
-    "url": "https://github.com/danielostrow/zotero-mcp-server/issues"
+    "url": "https://github.com/danielostrow/zotero-manager/issues"
   },
-  "homepage": "https://github.com/danielostrow/zotero-mcp-server#readme"
+  "homepage": "https://github.com/danielostrow/zotero-manager#readme"
 }

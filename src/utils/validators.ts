@@ -68,16 +68,6 @@ export const GenerateCitationSchema = z.object({
   locale: z.string().optional().default('en-US'),
 });
 
-export const ExtractPdfTextSchema = z.object({
-  itemKey: z.string().min(1),
-  pages: z
-    .object({
-      start: z.number().min(1).optional(),
-      end: z.number().min(1).optional(),
-    })
-    .optional(),
-});
-
 export const ManageCollectionsSchema = z
   .object({
     action: z.enum(['create', 'update', 'delete', 'list', 'get']),

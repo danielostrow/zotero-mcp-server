@@ -4,7 +4,6 @@
  */
 
 import type { ZoteroClient } from '../services/zotero-client.js';
-import type { PDFExtractor } from '../services/pdf-extractor.js';
 import {
   SearchItemsSchema,
   GetItemSchema,
@@ -12,7 +11,6 @@ import {
   UpdateItemSchema,
   DeleteItemsSchema,
   GenerateCitationSchema,
-  ExtractPdfTextSchema,
   ManageCollectionsSchema,
   ManageTagsSchema,
 } from '../utils/validators.js';
@@ -184,39 +182,6 @@ export async function generateCitation(params: any, zoteroClient: ZoteroClient):
         {
           type: 'text',
           text: citation,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [{ type: 'text', text: formatErrorForMCP(error) }],
-      isError: true,
-    };
-  }
-}
-
-/**
- * Extract PDF full-text content
- */
-export async function extractPdfText(params: any, pdfExtractor: PDFExtractor): Promise<any> {
-  try {
-    const validated = ExtractPdfTextSchema.parse(params);
-
-    const result = await pdfExtractor.extractText(validated.itemKey, validated.pages);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            {
-              content: result.content,
-              numPages: result.numPages,
-              info: result.info,
-            },
-            null,
-            2
-          ),
         },
       ],
     };

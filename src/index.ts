@@ -16,12 +16,10 @@ import {
 import { config } from './config/default.js';
 import { CacheManager } from './services/cache-manager.js';
 import { ZoteroClient } from './services/zotero-client.js';
-import { PDFExtractor } from './services/pdf-extractor.js';
 import {
   searchItems,
   getItem,
   generateCitation,
-  extractPdfText,
   createItem,
   updateItem,
   deleteItems,
@@ -43,14 +41,13 @@ async function main() {
   // Initialize services
   const cache = new CacheManager();
   const zoteroClient = new ZoteroClient(config, cache);
-  const pdfExtractor = new PDFExtractor(zoteroClient);
 
   console.error('[Zotero MCP] Services initialized');
 
   // Create MCP server
   const server = new Server(
     {
-      name: 'zotero-mcp-server',
+      name: 'zotero-manager',
       version: '1.0.0',
     },
     {
@@ -186,28 +183,6 @@ async function main() {
               },
             },
             required: ['itemKeys', 'style'],
-          },
-        },
-        {
-          name: 'extract_pdf_text',
-          description: 'Extract full-text content from PDF attachments',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              itemKey: {
-                type: 'string',
-                description: 'Item key (parent item or attachment)',
-              },
-              pages: {
-                type: 'object',
-                properties: {
-                  start: { type: 'number' },
-                  end: { type: 'number' },
-                },
-                description: 'Optional page range to extract',
-              },
-            },
-            required: ['itemKey'],
           },
         },
         {
@@ -355,8 +330,6 @@ async function main() {
         return await getItem(params, zoteroClient);
       case 'generate_citation':
         return await generateCitation(params, zoteroClient);
-      case 'extract_pdf_text':
-        return await extractPdfText(params, pdfExtractor);
       case 'create_item':
         return await createItem(params, zoteroClient);
       case 'update_item':

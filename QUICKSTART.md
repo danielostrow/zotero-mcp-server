@@ -85,12 +85,6 @@ Search my Zotero library for machine learning papers
 Generate APA citations for the first 3 machine learning papers
 ```
 
-### Extract PDF Content
-
-```
-Extract the abstract from the first paper (you'll need to provide the item key)
-```
-
 ### Manage Your Library
 
 ```
@@ -106,12 +100,11 @@ Add a new journal article about deep learning to my library
 1. **search_items** - Search and filter your library
 2. **get_item** - Get details for a specific item
 3. **generate_citation** - Format citations in any style
-4. **extract_pdf_text** - Get full-text from PDFs
-5. **create_item** - Add new items
-6. **update_item** - Modify existing items
-7. **delete_items** - Remove items
-8. **manage_collections** - Organize with collections
-9. **manage_tags** - Tag and categorize
+4. **create_item** - Add new items
+5. **update_item** - Modify existing items
+6. **delete_items** - Remove items
+7. **manage_collections** - Organize with collections
+8. **manage_tags** - Tag and categorize
 
 ## Available Resources
 
@@ -142,7 +135,6 @@ Add a new journal article about deep learning to my library
 - Read the full [README.md](README.md) for detailed documentation
 - Explore all available citation styles at `zotero://citation-styles`
 - Try combining tools: search → get items → generate citations
-- Index your PDFs in Zotero Desktop for full-text extraction
 
 ## Support
 

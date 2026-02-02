@@ -130,14 +130,6 @@ export interface ZoteroAttachment {
   path?: string;
 }
 
-export interface ZoteroFullText {
-  content: string;
-  indexedPages?: number;
-  totalPages?: number;
-  indexedChars?: number;
-  totalChars?: number;
-}
-
 export interface ZoteroSearchParams {
   q?: string; // Quick search
   qmode?: 'titleCreatorYear' | 'everything';
@@ -232,14 +224,6 @@ export interface GenerateCitationParams {
   style: string;
   format?: 'text' | 'html';
   locale?: string;
-}
-
-export interface ExtractPdfTextParams {
-  itemKey: string;
-  pages?: {
-    start?: number;
-    end?: number;
-  };
 }
 
 export interface ManageCollectionsParams {

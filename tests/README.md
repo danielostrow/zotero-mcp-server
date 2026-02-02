@@ -46,10 +46,6 @@ npx tsx tests/integration.test.ts
 - ✅ manage_tags tool
 - ✅ get_item tool
 
-### PDF Extraction Tests
-- ✅ Full-text extraction from indexed PDFs
-- ✅ Error handling for non-indexed PDFs
-
 ### Cache Tests
 - ✅ Cache functionality
 - ✅ Cache hit rates
@@ -106,11 +102,6 @@ Configuration:
 ✅ manage_tags tool
    MCP tool listed tags
 
-📄 PDF Extraction Tests
-
-✅ PDF full-text extraction
-   Extracted 15234 characters
-
 💾 Cache Tests
 
 ✅ Cache is working
@@ -120,8 +111,8 @@ Configuration:
 
 📊 Test Summary
 
-Total Tests: 14
-Passed: 14 ✅
+Total Tests: 13
+Passed: 13 ✅
 Failed: 0 ❌
 Success Rate: 100%
 
@@ -156,12 +147,3 @@ Error: Configuration validation failed:
 ```
 
 **Solution**: Add some items to your Zotero library
-
-### PDF not indexed
-
-```
-❌ PDF full-text extraction
-   PDF not indexed (open Zotero Desktop to index)
-```
-
-**Solution**: Open Zotero Desktop and allow it to index your PDF attachments

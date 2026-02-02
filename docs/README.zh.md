@@ -1,54 +1,61 @@
-# Zotero MCP Server（中文）
+![Zotero Manager](./docs/assets/image.svg)
+
+# Zotero Manager MCP
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node >= 20.16](https://img.shields.io/badge/node-%3E%3D%2020.16-brightgreen.svg)
 
-一个基于 Model Context Protocol (MCP) 的服务器，让 AI 客户端可以结构化访问你的 Zotero 资料库，实现检索、引用与管理。
+一个模型上下文协议 (Model Context Protocol, MCP) 服务器，充当 AI 客户端的 Zotero 库管理员。使用结构化工具组织、清理和管理参考文献，同时仍支持搜索和引用工作流。
 
-## ✨ 核心亮点
+English | [中文](docs/README.zh.md)
 
-- Zotero 条目、收藏夹与标签的读写管理
-- 支持常见引用格式（APA/MLA/Chicago/IEEE 等）
-- 支持收藏夹内检索与标签管理
-- 内存缓存 + 自动限流回退
-- 面向 MCP 客户端（stdio 传输）
+---
 
-## ✅ 环境要求
+## ✨ 亮点
+
+- 对 Zotero 条目 (Items)、分类 (Collections) 和标签 (Tags) 拥有管理员级的读/写访问权限
+- 通过结构化更新维护元数据（标题、创作者、日期等）
+- 分类/标签组织和批量删除操作
+- 生成常用格式（APA, MLA, Chicago, IEEE 等）的引文
+- 内存缓存和自动速率限制退避 (backoff)
+- 专为兼容 MCP 的客户端（stdio 传输）设计
+
+## ✅ 需求
 
 - Node.js >= 20.16
-- Zotero API Key
-- Zotero 用户 ID 或群组 ID
+- Zotero API 密钥 (Key)
+- Zotero 用户 ID (User ID) 或群组 ID (Group ID)
 
-获取 API Key： https://www.zotero.org/settings/keys
+获取您的 API 密钥：https://www.zotero.org/settings/keys
 
 ## 🚀 快速开始
 
 ### npm
 
 ```bash
-npm install -g zotero-mcp-server
+npm install -g zotero-manager
 ```
 
-启动：
+运行：
 
 ```bash
-ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here zotero-mcp
+ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here zotero-manager
 ```
 
-或使用 npx：
+或者使用 npx：
 
 ```bash
-ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here npx zotero-mcp-server
+ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here npx zotero-manager
 ```
 
-### source
+### 源码 (Source)
 
 ```bash
 npm install
 npm run build
 ```
 
-创建 `.env`（参考 `.env.example`）：
+创建一个 `.env` 文件（参考 `.env.example`）：
 
 ```env
 ZOTERO_API_KEY=your_api_key_here
@@ -56,7 +63,7 @@ ZOTERO_USER_ID=your_user_id_here
 # ZOTERO_GROUP_ID=your_group_id_here
 ```
 
-启动服务：
+运行服务器：
 
 ```bash
 node dist/index.js
@@ -64,16 +71,16 @@ node dist/index.js
 
 ## 🔌 MCP 客户端配置示例
 
-以下是使用 stdio 传输的 MCP 客户端配置示例：
+适用于支持 stdio 传输的桌面 MCP 客户端的示例：
 
-### npm（npx）
+### npm (npx)
 
 ```json
 {
   "mcpServers": {
     "zotero": {
       "command": "npx",
-        "args": ["zotero-mcp-server"],
+      "args": ["zotero-manager"],
       "env": {
         "ZOTERO_API_KEY": "your_api_key_here",
         "ZOTERO_USER_ID": "your_user_id_here"
@@ -83,14 +90,14 @@ node dist/index.js
 }
 ```
 
-### source（node）
+### 源码 (node)
 
 ```json
 {
   "mcpServers": {
     "zotero": {
       "command": "node",
-      "args": ["/absolute/path/to/zotero-mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/zotero-manager/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your_api_key_here",
         "ZOTERO_USER_ID": "your_user_id_here"
@@ -100,29 +107,28 @@ node dist/index.js
 }
 ```
 
-二进制名称：`zotero-mcp`。
+二进制文件名称：`zotero-manager`。
 
-## 🛠️ Tools（工具）
+## 🛠️ 工具
 
-- `search_items` - 检索条目（关键词/标签/收藏夹/类型）
-- `get_item` - 通过 key 或 DOI 获取条目
-- `generate_citation` - 生成引用格式
-- `create_item` - 新建条目
-- `update_item` - 更新条目（需 version）
-- `delete_items` - 批量删除（最多 50）
-- `manage_collections` - 收藏夹管理
-- `manage_tags` - 标签管理
-- `extract_pdf_text` - 提取 PDF 附件全文
+- `search_items` - 搜索库条目（查询、标签、分类、条目类型）
+- `get_item` - 通过 key 或 DOI 获取单个条目
+- `generate_citation` - 以所选格式生成引文
+- `create_item` - 创建新的 Zotero 条目
+- `update_item` - 更新条目字段（需要版本号）
+- `delete_items` - 删除条目（批量最多 50 个）
+- `manage_collections` - 列出/获取/创建/更新/删除分类
+- `manage_tags` - 列出/添加/移除/删除标签
 
-## 🧭 Resources（资源）
+## 🧭 资源
 
-- `zotero://collections` - 收藏夹结构与元数据
-- `zotero://tags` - 标签及使用次数
-- `zotero://citation-styles` - 常见引用样式 ID（非完整列表）
+- `zotero://collections` - 分类层级结构和元数据
+- `zotero://tags` - 所有标签及其使用计数
+- `zotero://citation-styles` - 常用引文格式 ID（非详尽列表）
 
 ## 📌 使用示例
 
-搜索：
+搜索条目：
 
 ```json
 {
@@ -133,24 +139,38 @@ node dist/index.js
 }
 ```
 
-在收藏夹内搜索：
+更新条目元数据：
 
 ```json
 {
-  "collection": "COLLECTION_KEY",
-  "limit": 25
+  "itemKey": "ITEM_KEY",
+  "version": 12,
+  "data": {
+    "title": "Corrected Title",
+    "tags": ["reviewed", "cleaned"]
+  }
 }
 ```
 
-通过 DOI 获取条目：
+管理条目标签：
 
 ```json
 {
-  "doi": "10.1038/s41467-024-47316-2"
+  "action": "add_to_item",
+  "itemKey": "ITEM_KEY",
+  "tags": ["to-read", "priority"]
 }
 ```
 
-生成引用：
+批量删除条目：
+
+```json
+{
+  "itemKeys": ["ITEM_KEY_1", "ITEM_KEY_2"]
+}
+```
+
+生成引文：
 
 ```json
 {
@@ -176,24 +196,24 @@ node dist/index.js
 }
 ```
 
-## ⚙️ 配置项
+## ⚙️ 配置
 
 环境变量：
 
-- `ZOTERO_API_KEY`（必填）
-- `ZOTERO_USER_ID` 或 `ZOTERO_GROUP_ID`（必填）
-- `ZOTERO_BASE_URL`（默认 https://api.zotero.org）
-- `ZOTERO_TIMEOUT`（默认 30000 ms）
-- `ZOTERO_MAX_RETRIES`（默认 3）
-- `CACHE_ENABLED`（默认 true）
-- `CACHE_TTL_SECONDS`（默认 300）
-- `LOG_LEVEL`（默认 info）
+- `ZOTERO_API_KEY` (必填)
+- `ZOTERO_USER_ID` 或 `ZOTERO_GROUP_ID` (必填)
+- `ZOTERO_BASE_URL` (默认: https://api.zotero.org)
+- `ZOTERO_TIMEOUT` (默认: 30000 ms)
+- `ZOTERO_MAX_RETRIES` (默认: 3)
+- `CACHE_ENABLED` (默认: true)
+- `CACHE_TTL_SECONDS` (默认: 300)
+- `LOG_LEVEL` (默认: info)
 
-## 🧠 缓存与限流
+## 🧠 缓存和速率限制
 
-- 搜索结果默认缓存 300 秒
-- 收藏夹/标签缓存 15 分钟；模板缓存 1 小时
-- 支持 `Backoff` / `Retry-After` 自动退避与重试
+- 搜索结果使用可配置的 TTL（默认 300秒）
+- 分类/标签缓存 15 分钟；条目模板缓存 1 小时
+- 遵循 `Backoff` / `Retry-After` 头，并重试瞬时故障
 
 ## 🧪 开发
 
@@ -207,16 +227,16 @@ npm run dev
 npm run build
 ```
 
-测试（需要可用的 .env）：
+测试（需要有效的 .env）：
 
 ```bash
 npm test
 ```
 
+## 🤝 致谢
+
+基于 Zotero Web API 和 Model Context Protocol SDK 构建。
+
 ## 📄 许可证
 
-MIT License，详见 `LICENSE`。
-
----
-
-Zotero 是 Corporation for Digital Scholarship 的商标。本项目与 Zotero 官方无隶属关系。
+MIT License.

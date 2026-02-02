@@ -12,7 +12,6 @@ import type {
   ZoteroCollection,
   ZoteroSearchParams,
   ZoteroItemTemplate,
-  ZoteroFullText,
 } from '../types/zotero.js';
 import type { CacheManager } from './cache-manager.js';
 
@@ -577,43 +576,6 @@ export class ZoteroClient {
     }
 
     return tags;
-  }
-
-  /**
-   * Get full-text content for an item's PDF attachment
-   */
-  async getFullText(itemKey: string): Promise<ZoteroFullText | null> {
-    const cacheKey = `fulltext:${itemKey}`;
-    if (this.config.cacheEnabled) {
-      const cached = this.cache.get<ZoteroFullText>(cacheKey);
-      if (cached) {
-        return cached;
-      }
-    }
-
-    const { type, id } = this.getLibraryId();
-
-    try {
-      const fullText = await this.executeWithRetry(async (signal) => {
-        const response = await this.client
-          .library(type, id)
-          .items(itemKey)
-          .fulltext()
-          .get({ signal });
-
-        return response.getData() as ZoteroFullText;
-      });
-
-      if (this.config.cacheEnabled && fullText) {
-        // Cache full-text permanently (invalidate on version change)
-        this.cache.set(cacheKey, fullText, 86400 * 30); // 30 days
-      }
-
-      return fullText;
-    } catch (error) {
-      // Full-text not available for this item
-      return null;
-    }
   }
 
   /**
