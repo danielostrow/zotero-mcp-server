@@ -8,7 +8,7 @@ export const SearchItemsSchema = z.object({
   query: z.string().optional(),
   qmode: z.enum(['titleCreatorYear', 'everything']).optional(),
   itemType: z.string().optional(),
-  tag: z.array(z.string()).optional(),
+  tag: z.union([z.string(), z.array(z.string())]).optional(),
   collection: z.string().optional(),
   limit: z.number().min(1).max(100).optional().default(25),
   start: z.number().min(0).optional(),

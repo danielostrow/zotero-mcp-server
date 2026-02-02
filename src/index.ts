@@ -88,9 +88,14 @@ async function main() {
                 description: 'Filter by item type (book, journalArticle, etc.)',
               },
               tag: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Filter by tags',
+                anyOf: [
+                  { type: 'string' },
+                  {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                ],
+                description: 'Filter by tags (single tag or list)',
               },
               collection: {
                 type: 'string',
@@ -100,6 +105,10 @@ async function main() {
                 type: 'number',
                 description: 'Number of results (max 100)',
                 default: 25,
+              },
+              start: {
+                type: 'number',
+                description: 'Result offset (for pagination)',
               },
               sort: {
                 type: 'string',
@@ -111,6 +120,12 @@ async function main() {
                 enum: ['asc', 'desc'],
                 description: 'Sort direction',
                 default: 'desc',
+              },
+              format: {
+                type: 'string',
+                enum: ['json', 'bibtex', 'csljson'],
+                description: 'Response format (non-json returns raw text)',
+                default: 'json',
               },
             },
           },
@@ -128,6 +143,17 @@ async function main() {
               doi: {
                 type: 'string',
                 description: 'DOI to look up',
+              },
+              format: {
+                type: 'string',
+                enum: ['json', 'bibtex', 'csljson', 'ris'],
+                description: 'Response format',
+                default: 'json',
+              },
+              include: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Additional fields to include (e.g., bib, data, csljson)',
               },
             },
           },
@@ -152,6 +178,11 @@ async function main() {
                 enum: ['text', 'html'],
                 description: 'Output format',
                 default: 'text',
+              },
+              locale: {
+                type: 'string',
+                description: 'Locale for citation formatting (e.g., en-US)',
+                default: 'en-US',
               },
             },
             required: ['itemKeys', 'style'],
@@ -254,13 +285,17 @@ async function main() {
                 items: { type: 'string' },
                 description: 'Item keys to delete (max 50)',
               },
+              version: {
+                type: 'number',
+                description: 'Optional library version for conflict detection',
+              },
             },
             required: ['itemKeys'],
           },
         },
         {
           name: 'manage_collections',
-          description: 'Manage collections (create, list, get, delete)',
+          description: 'Manage collections (create, update, list, get, delete)',
           inputSchema: {
             type: 'object',
             properties: {
@@ -271,25 +306,31 @@ async function main() {
               collectionKey: { type: 'string' },
               name: { type: 'string' },
               parentCollection: { type: 'string' },
+              version: { type: 'number' },
             },
             required: ['action'],
           },
         },
         {
           name: 'manage_tags',
-          description: 'Manage tags (list, add to item, remove from item)',
+          description: 'Manage tags (list, add to item, remove from item, delete)',
           inputSchema: {
             type: 'object',
             properties: {
               action: {
                 type: 'string',
-                enum: ['list', 'add_to_item', 'remove_from_item'],
+                enum: ['list', 'add_to_item', 'remove_from_item', 'delete'],
               },
               itemKey: { type: 'string' },
               tag: { type: 'string' },
               tags: {
                 type: 'array',
                 items: { type: 'string' },
+              },
+              type: {
+                type: 'number',
+                enum: [0, 1],
+                description: 'Tag type (0=automatic, 1=manual)',
               },
             },
             required: ['action'],

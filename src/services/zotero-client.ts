@@ -20,10 +20,14 @@ export class ZoteroClient {
   private config: ZoteroConfig;
   private cache: CacheManager;
   private backoffUntil: number | null = null;
+  private apiAuthorityPart: string;
+  private client: any;
 
   constructor(config: ZoteroConfig, cache: CacheManager) {
     this.config = config;
     this.cache = cache;
+    this.apiAuthorityPart = new URL(this.config.baseUrl).host;
+    this.client = api(this.config.apiKey, { apiAuthorityPart: this.apiAuthorityPart });
   }
 
   /**
@@ -38,22 +42,86 @@ export class ZoteroClient {
     }
   }
 
+  private createAbortSignal(): { signal?: AbortSignal; cleanup: () => void } {
+    const timeoutMs = this.config.timeout;
+    if (!timeoutMs || timeoutMs <= 0) {
+      return { signal: undefined, cleanup: () => {} };
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    return {
+      signal: controller.signal,
+      cleanup: () => clearTimeout(timeoutId),
+    };
+  }
+
+  private getErrorStatus(error: any): number | undefined {
+    const statusFromResponse = error?.response?.status;
+    if (typeof statusFromResponse === 'number') return statusFromResponse;
+    const statusFromMessage = error?.message?.match(/(\d{3})/)?.[1];
+    if (statusFromMessage) return parseInt(statusFromMessage, 10);
+    return undefined;
+  }
+
+  private getRetryAfterSeconds(error: any): number | null {
+    const headers = error?.response?.headers;
+    if (!headers || typeof headers.get !== 'function') return null;
+    const backoff = headers.get('Backoff') || headers.get('backoff');
+    const retryAfter = headers.get('Retry-After') || headers.get('retry-after');
+    const value = backoff ?? retryAfter;
+    if (!value) return null;
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private async extractTextResponse(response: any): Promise<string> {
+    if (response && typeof response === 'object' && 'response' in response) {
+      const fetchResponse = (response as any).response;
+      if (fetchResponse && typeof fetchResponse.text === 'function') {
+        return await fetchResponse.text();
+      }
+    }
+    if (response && typeof response === 'object' && 'ok' in response && typeof (response as any).text === 'function') {
+      return await (response as any).text();
+    }
+    if (response && typeof (response as any).getData === 'function') {
+      const data = (response as any).getData();
+      if (data && typeof data === 'object' && typeof data.text === 'function') {
+        return await data.text();
+      }
+      if (typeof data === 'string') {
+        return data;
+      }
+    }
+    if (typeof response === 'string') return response;
+    throw new Error('Unexpected response format');
+  }
+
   /**
    * Execute API request with retry logic
    */
   private async executeWithRetry<T>(
-    fn: () => Promise<T>,
+    fn: (signal?: AbortSignal) => Promise<T>,
     retries: number = this.config.maxRetries
   ): Promise<T> {
     await this.handleRateLimit();
+    const { signal, cleanup } = this.createAbortSignal();
 
     try {
-      return await fn();
+      return await fn(signal);
     } catch (error: any) {
+      const status = this.getErrorStatus(error);
+      const retryAfterSeconds = this.getRetryAfterSeconds(error);
+      if (retryAfterSeconds) {
+        this.backoffUntil = Date.now() + retryAfterSeconds * 1000;
+      }
+
       // Handle rate limiting (429)
-      if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-        const backoffSeconds = 5 * Math.pow(2, this.config.maxRetries - retries);
-        this.backoffUntil = Date.now() + backoffSeconds * 1000;
+      if (status === 429 || status === 503) {
+        if (!retryAfterSeconds) {
+          const backoffSeconds = 5 * Math.pow(2, this.config.maxRetries - retries);
+          this.backoffUntil = Date.now() + backoffSeconds * 1000;
+        }
 
         if (retries > 0) {
           console.error(`[Rate limit] Retry ${this.config.maxRetries - retries + 1}/${this.config.maxRetries}`);
@@ -64,9 +132,12 @@ export class ZoteroClient {
       // Handle network errors and 5xx errors
       if (
         retries > 0 &&
-        (error.message?.includes('ECONNREFUSED') ||
+        (error.name === 'AbortError' ||
+          status === 408 ||
+          (status != null && status >= 500) ||
+          error.message?.includes('ECONNREFUSED') ||
           error.message?.includes('ETIMEDOUT') ||
-          error.message?.includes('5'))
+          error.message?.includes('fetch failed'))
       ) {
         const delay = 1000 * (this.config.maxRetries - retries + 1);
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -74,6 +145,8 @@ export class ZoteroClient {
       }
 
       throw error;
+    } finally {
+      cleanup();
     }
   }
 
@@ -104,11 +177,8 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const items = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
-        .library(type, id)
-        .items()
-        .get(params as any);
+    const items = await this.executeWithRetry(async (signal) => {
+      const response = await this.client.library(type, id).items().get({ ...(params as any), signal });
 
       return response.getData() as ZoteroItem[];
     });
@@ -121,10 +191,83 @@ export class ZoteroClient {
   }
 
   /**
+   * Search items within a collection (uses collection endpoint)
+   */
+  async searchItemsInCollection(
+    collectionKey: string,
+    params: ZoteroSearchParams
+  ): Promise<ZoteroItem[]> {
+    const cacheKey = `search:collection:${collectionKey}:${JSON.stringify(params)}`;
+    if (this.config.cacheEnabled) {
+      const cached = this.cache.get<ZoteroItem[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const { type, id } = this.getLibraryId();
+
+    const items = await this.executeWithRetry(async (signal) => {
+      const response = await this.client
+        .library(type, id)
+        .collections(collectionKey)
+        .items()
+        .get({ ...(params as any), signal });
+
+      return response.getData() as ZoteroItem[];
+    });
+
+    if (this.config.cacheEnabled) {
+      this.cache.set(cacheKey, items, this.config.cacheTTL);
+    }
+
+    return items;
+  }
+
+  /**
+   * Search and retrieve items in non-JSON formats
+   */
+  async searchItemsRaw(params: ZoteroSearchParams): Promise<string> {
+    const { type, id } = this.getLibraryId();
+    const response = await this.executeWithRetry(async (signal) => {
+      return await this.client.library(type, id).items().get({ ...(params as any), signal });
+    });
+    return this.extractTextResponse(response);
+  }
+
+  /**
+   * Search items in a collection in non-JSON formats
+   */
+  async searchItemsInCollectionRaw(collectionKey: string, params: ZoteroSearchParams): Promise<string> {
+    const { type, id } = this.getLibraryId();
+    const response = await this.executeWithRetry(async (signal) => {
+      return await this.client
+        .library(type, id)
+        .collections(collectionKey)
+        .items()
+        .get({ ...(params as any), signal });
+    });
+    return this.extractTextResponse(response);
+  }
+
+  /**
    * Get a single item by key
    */
   async getItem(itemKey: string): Promise<ZoteroItem> {
-    const cacheKey = `item:${itemKey}`;
+    const item = await this.getItemWithFormat(itemKey, { format: 'json' });
+    return item as ZoteroItem;
+  }
+
+  /**
+   * Get a single item by key with format/include options
+   */
+  async getItemWithFormat(
+    itemKey: string,
+    options?: { format?: 'json' | 'bibtex' | 'csljson' | 'ris'; include?: string[] }
+  ): Promise<ZoteroItem | string> {
+    const includeKey = options?.include ? options.include.join(',') : '';
+    const formatKey = options?.format || 'json';
+    const cacheKey = options?.format || options?.include ? `item:${itemKey}:${formatKey}:${includeKey}` : `item:${itemKey}`;
     if (this.config.cacheEnabled) {
       const cached = this.cache.get<ZoteroItem>(cacheKey);
       if (cached) {
@@ -134,17 +277,27 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const item = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
+    const item = await this.executeWithRetry(async (signal) => {
+      const response = await this.client
         .library(type, id)
         .items(itemKey)
-        .get();
+        .get({
+          format: options?.format,
+          include: options?.include ? options.include.join(',') : undefined,
+          signal,
+        } as any);
+
+      if (options?.format && options.format !== 'json') {
+        return await this.extractTextResponse(response);
+      }
 
       return response.getData() as ZoteroItem;
     });
 
     if (this.config.cacheEnabled) {
-      this.cache.set(cacheKey, item, this.config.cacheTTL);
+      if (typeof item !== 'string') {
+        this.cache.set(cacheKey, item, this.config.cacheTTL);
+      }
     }
 
     return item;
@@ -162,9 +315,9 @@ export class ZoteroClient {
       }
     }
 
-    const template = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey).itemTemplate(itemType).get();
-      return response as ZoteroItemTemplate;
+    const template = await this.executeWithRetry(async (signal) => {
+      const response = await this.client.template(itemType).get({ signal });
+      return response.getData() as ZoteroItemTemplate;
     });
 
     if (this.config.cacheEnabled) {
@@ -181,20 +334,24 @@ export class ZoteroClient {
   async createItem(itemData: any): Promise<ZoteroItem> {
     const { type, id } = this.getLibraryId();
 
-    const created = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
+    const created = await this.executeWithRetry(async (signal) => {
+      const response = await this.client
         .library(type, id)
         .items()
-        .post([itemData]);
+        .post([itemData], { signal });
 
       const results = response.getData();
-      return results.successful[0] as ZoteroItem;
+      // zotero-api-client returns an array for multi-write operations
+      return (Array.isArray(results) ? results[0] : results) as ZoteroItem;
     });
 
     // Invalidate search caches
     if (this.config.cacheEnabled) {
       this.cache.invalidateByPrefix('search:');
       this.cache.invalidateByPrefix('collections:');
+      if (itemData?.tags) {
+        this.cache.invalidateByPrefix('tags:');
+      }
     }
 
     return created;
@@ -203,22 +360,28 @@ export class ZoteroClient {
   /**
    * Update an existing item
    */
-  async updateItem(itemKey: string, itemData: any, _version: number): Promise<ZoteroItem> {
+  async updateItem(itemKey: string, itemData: any, version: number): Promise<ZoteroItem> {
     const { type, id } = this.getLibraryId();
 
-    const updated = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
-        .library(type, id)
-        .items(itemKey)
-        .patch(itemData);
+    const updated = await this.executeWithRetry(async (signal) => {
+      let request = this.client.library(type, id).items(itemKey);
+
+      if (version !== undefined) {
+        request = request.version(version);
+      }
+
+      const response = await request.patch(itemData, { signal });
 
       return response.getData() as ZoteroItem;
     });
 
     // Invalidate caches
     if (this.config.cacheEnabled) {
-      this.cache.delete(`item:${itemKey}`);
+      this.cache.invalidateByPrefix(`item:${itemKey}`);
       this.cache.invalidateByPrefix('search:');
+      if (itemData?.tags) {
+        this.cache.invalidateByPrefix('tags:');
+      }
     }
 
     return updated;
@@ -227,23 +390,24 @@ export class ZoteroClient {
   /**
    * Delete items (supports batch up to 50)
    */
-  async deleteItems(itemKeys: string[]): Promise<void> {
+  async deleteItems(itemKeys: string[], version?: number): Promise<void> {
     if (itemKeys.length > 50) {
       throw new Error('Cannot delete more than 50 items at once');
     }
 
     const { type, id } = this.getLibraryId();
 
-    await this.executeWithRetry(async () => {
-      await api(this.config.apiKey)
-        .library(type, id)
-        .items()
-        .delete(itemKeys);
+    await this.executeWithRetry(async (signal) => {
+      let request = this.client.library(type, id).items();
+      if (version !== undefined) {
+        request = request.version(version);
+      }
+      await request.delete(itemKeys, { signal });
     });
 
     // Invalidate caches
     if (this.config.cacheEnabled) {
-      itemKeys.forEach((key) => this.cache.delete(`item:${key}`));
+      itemKeys.forEach((key) => this.cache.invalidateByPrefix(`item:${key}`));
       this.cache.invalidateByPrefix('search:');
       this.cache.invalidateByPrefix('collections:');
     }
@@ -263,11 +427,8 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const collections = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
-        .library(type, id)
-        .collections()
-        .get();
+    const collections = await this.executeWithRetry(async (signal) => {
+      const response = await this.client.library(type, id).collections().get({ signal });
 
       return response.getData() as ZoteroCollection[];
     });
@@ -294,11 +455,11 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const collection = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
+    const collection = await this.executeWithRetry(async (signal) => {
+      const response = await this.client
         .library(type, id)
         .collections(collectionKey)
-        .get();
+        .get({ signal });
 
       return response.getData() as ZoteroCollection;
     });
@@ -321,14 +482,15 @@ export class ZoteroClient {
       collectionData.parentCollection = parentCollection;
     }
 
-    const created = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
+    const created = await this.executeWithRetry(async (signal) => {
+      const response = await this.client
         .library(type, id)
         .collections()
-        .post([collectionData]);
+        .post([collectionData], { signal });
 
       const results = response.getData();
-      return results.successful[0] as ZoteroCollection;
+      // zotero-api-client returns an array for multi-write operations
+      return (Array.isArray(results) ? results[0] : results) as ZoteroCollection;
     });
 
     if (this.config.cacheEnabled) {
@@ -339,16 +501,49 @@ export class ZoteroClient {
   }
 
   /**
-   * Delete a collection
+   * Update an existing collection
    */
-  async deleteCollection(collectionKey: string): Promise<void> {
+  async updateCollection(
+    collectionKey: string,
+    collectionData: { name?: string; parentCollection?: string },
+    version?: number
+  ): Promise<ZoteroCollection> {
     const { type, id } = this.getLibraryId();
 
-    await this.executeWithRetry(async () => {
-      await api(this.config.apiKey)
-        .library(type, id)
-        .collections(collectionKey)
-        .delete();
+    const updated = await this.executeWithRetry(async (signal) => {
+      let request = this.client.library(type, id).collections(collectionKey);
+
+      if (version !== undefined) {
+        request = request.version(version);
+      }
+
+      const response = await request.patch(collectionData, { signal });
+
+      return response.getData() as ZoteroCollection;
+    });
+
+    if (this.config.cacheEnabled) {
+      this.cache.delete(`collection:${collectionKey}`);
+      this.cache.invalidateByPrefix('collections:');
+    }
+
+    return updated;
+  }
+
+  /**
+   * Delete a collection
+   */
+  async deleteCollection(collectionKey: string, version?: number): Promise<void> {
+    const { type, id } = this.getLibraryId();
+
+    await this.executeWithRetry(async (signal) => {
+      let request = this.client.library(type, id).collections(collectionKey);
+
+      if (version !== undefined) {
+        request = request.version(version);
+      }
+
+      await request.delete(undefined, { signal });
     });
 
     if (this.config.cacheEnabled) {
@@ -371,11 +566,8 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const tags = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
-        .library(type, id)
-        .tags()
-        .get();
+    const tags = await this.executeWithRetry(async (signal) => {
+      const response = await this.client.library(type, id).tags().get({ signal });
 
       return response.getData() as Array<{ tag: string; type: number }>;
     });
@@ -402,12 +594,12 @@ export class ZoteroClient {
     const { type, id } = this.getLibraryId();
 
     try {
-      const fullText = await this.executeWithRetry(async () => {
-        const response = await api(this.config.apiKey)
+      const fullText = await this.executeWithRetry(async (signal) => {
+        const response = await this.client
           .library(type, id)
           .items(itemKey)
           .fulltext()
-          .get();
+          .get({ signal });
 
         return response.getData() as ZoteroFullText;
       });
@@ -430,9 +622,10 @@ export class ZoteroClient {
   async generateCitation(
     itemKeys: string[],
     style: string = 'apa',
-    format: 'text' | 'html' = 'text'
+    format: 'text' | 'html' = 'text',
+    locale?: string
   ): Promise<string> {
-    const cacheKey = `citation:${itemKeys.join(',')}:${style}:${format}`;
+    const cacheKey = `citation:${itemKeys.join(',')}:${style}:${format}:${locale || 'default'}`;
     if (this.config.cacheEnabled) {
       const cached = this.cache.get<string>(cacheKey);
       if (cached) {
@@ -442,50 +635,16 @@ export class ZoteroClient {
 
     const { type, id } = this.getLibraryId();
 
-    const citation = await this.executeWithRetry(async () => {
-      const response = await api(this.config.apiKey)
-        .library(type, id)
-        .items()
-        .get({
-          itemKey: itemKeys.join(','),
-          format: 'bib',
-          style,
-          linkwrap: format === 'html' ? 1 : 0,
-        } as any);
-
-      // When format=bib is used, zotero-api-client returns a RawApiResponse wrapper
-      // The actual fetch Response is nested at response.response
-      if (response && typeof response === 'object' && 'response' in response) {
-        const fetchResponse = (response as any).response;
-        if (fetchResponse && typeof fetchResponse.text === 'function') {
-          return await fetchResponse.text();
-        }
-      }
-
-      // Fallback: check if response itself is a fetch Response
-      if (response && typeof response === 'object' && 'ok' in response && typeof (response as any).text === 'function') {
-        return await (response as any).text();
-      }
-
-      // Try getData method if available (might return another wrapper)
-      if (response && typeof (response as any).getData === 'function') {
-        const data = (response as any).getData();
-        // If getData returns a Response object, extract text from it
-        if (data && typeof data === 'object' && typeof data.text === 'function') {
-          return await data.text();
-        }
-        // Otherwise return as-is if it's a string
-        if (typeof data === 'string') {
-          return data;
-        }
-      }
-
-      // Last resort: return as-is if it's already a string
-      if (typeof response === 'string') {
-        return response;
-      }
-
-      throw new Error('Unexpected response format from citation API');
+    const citation = await this.executeWithRetry(async (signal) => {
+      const response = await this.client.library(type, id).items().get({
+        itemKey: itemKeys.join(','),
+        format: 'bib',
+        style,
+        linkwrap: format === 'html' ? 1 : 0,
+        locale,
+        signal,
+      } as any);
+      return await this.extractTextResponse(response);
     });
 
     if (this.config.cacheEnabled) {

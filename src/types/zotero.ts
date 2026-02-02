@@ -186,7 +186,7 @@ export interface SearchItemsParams {
   query?: string;
   qmode?: 'titleCreatorYear' | 'everything';
   itemType?: string;
-  tag?: string[];
+  tag?: string | string[];
   collection?: string;
   limit?: number;
   start?: number;

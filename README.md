@@ -2,19 +2,21 @@
 
 A Model Context Protocol server that provides programmatic access to Zotero reference libraries. This server enables AI assistants to search, cite, and manage research references directly from your Zotero library.
 
+English | [中文](docs/README.zh.md)
+
 ## Features
 
 ### Tools
 
-- **search_items** - Search and filter items in your library
-- **get_item** - Retrieve a single item by key or DOI
+- **search_items** - Search and filter items in your library (supports collection filters and multiple formats)
+- **get_item** - Retrieve a single item by key or DOI (supports multiple formats)
 - **generate_citation** - Generate formatted citations in multiple styles
 - **extract_pdf_text** - Extract full-text content from PDF attachments
 - **create_item** - Add new items to your library
 - **update_item** - Modify existing item metadata
 - **delete_items** - Remove items from your library
-- **manage_collections** - Create and organize collections
-- **manage_tags** - Add and remove tags from items
+- **manage_collections** - Create, update, and organize collections
+- **manage_tags** - Add, remove, or delete tags from items
 
 ### Resources
 
@@ -126,6 +128,13 @@ Search your library with various filters:
   "collection": "COLLECTION_KEY",
   "limit": 25
 }
+
+// Request non-JSON output (e.g., BibTeX)
+{
+  "query": "machine learning",
+  "format": "bibtex",
+  "limit": 5
+}
 ```
 
 ### Generating Citations
@@ -141,6 +150,15 @@ Create formatted citations in various styles:
 // Supported styles include:
 // apa, chicago-note-bibliography, mla, ieee, nature,
 // science, harvard-cite-them-right, vancouver, and 10,000+ more
+```
+
+### Getting Items in Other Formats
+
+```typescript
+{
+  "itemKey": "ITEM_KEY",
+  "format": "bibtex"
+}
 ```
 
 ### Extracting PDF Text
