@@ -5,6 +5,10 @@
 
 import type { ZoteroClient } from '../services/zotero-client.js';
 
+function getCollectionData(collection: any): any {
+  return collection?.data ?? collection ?? {};
+}
+
 /**
  * Collections resource
  */
@@ -40,13 +44,17 @@ export async function getCollectionsResource(zoteroClient: ZoteroClient, uri: st
             text: JSON.stringify(
               {
                 count: collections.length,
-                collections: collections.map((c) => ({
-                  key: c.key,
-                  name: c.data.name,
-                  parentCollection: c.data.parentCollection,
-                  numItems: c.meta?.numItems || 0,
-                  numCollections: c.meta?.numCollections || 0,
-                })),
+                collections: collections.map((c) => {
+                  const collectionData = getCollectionData(c);
+                  const collectionAny = c as any;
+                  return {
+                    key: collectionAny.key ?? collectionData.key,
+                    name: collectionData.name,
+                    parentCollection: collectionData.parentCollection ?? false,
+                    numItems: c.meta?.numItems ?? collectionAny.numItems ?? 0,
+                    numCollections: c.meta?.numCollections ?? collectionAny.numCollections ?? 0,
+                  };
+                }),
               },
               null,
               2

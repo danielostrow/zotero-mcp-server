@@ -8,12 +8,10 @@
 import { config } from '../src/config/default.js';
 import { CacheManager } from '../src/services/cache-manager.js';
 import { ZoteroClient } from '../src/services/zotero-client.js';
-import { PDFExtractor } from '../src/services/pdf-extractor.js';
 import {
   searchItems,
   getItem,
   generateCitation,
-  extractPdfText,
   createItem,
   updateItem,
   deleteItems,
@@ -52,8 +50,6 @@ async function runTests() {
   // Initialize services
   const cache = new CacheManager();
   const zoteroClient = new ZoteroClient(config, cache);
-  const pdfExtractor = new PDFExtractor(zoteroClient);
-
   // Store item keys for later tests
   let testItemKey: string | null = null;
   let testCollectionKey: string | null = null;
@@ -180,36 +176,13 @@ async function runTests() {
     logTest('manage_tags tool', false, error.message);
   }
 
-  console.log('\n📄 PDF Extraction Tests\n');
-
-  // Test 12: PDF Full-text Extraction
-  try {
-    const items = await zoteroClient.searchItems({ limit: 20 });
-    const pdfAttachment = items.find((item: any) =>
-      item.itemType === 'attachment' && item.contentType === 'application/pdf'
-    );
-
-    if (pdfAttachment) {
-      const fullText = await zoteroClient.getFullText(pdfAttachment.key);
-      if (fullText && fullText.content) {
-        logTest('PDF full-text extraction', true, `Extracted ${fullText.indexedChars} characters`);
-      } else {
-        logTest('PDF full-text extraction', false, 'PDF not indexed (open Zotero Desktop to index)');
-      }
-    } else {
-      logTest('PDF full-text extraction', false, 'No PDF attachments found in first 20 items');
-    }
-  } catch (error: any) {
-    logTest('PDF full-text extraction', false, error.message);
-  }
-
   console.log('\n💾 Cache Tests\n');
 
-  // Test 13: Cache Functionality
+  // Test 12: Cache Functionality
   const cacheStats = cache.stats();
   logTest('Cache is working', cacheStats.size > 0, `${cacheStats.size} entries cached`);
 
-  // Test 14: Cache Hit
+  // Test 13: Cache Hit
   if (testItemKey) {
     try {
       await zoteroClient.getItem(testItemKey);

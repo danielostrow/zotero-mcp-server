@@ -8,7 +8,7 @@ export const SearchItemsSchema = z.object({
   query: z.string().optional(),
   qmode: z.enum(['titleCreatorYear', 'everything']).optional(),
   itemType: z.string().optional(),
-  tag: z.array(z.string()).optional(),
+  tag: z.union([z.string(), z.array(z.string())]).optional(),
   collection: z.string().optional(),
   limit: z.number().min(1).max(100).optional().default(25),
   start: z.number().min(0).optional(),
@@ -46,7 +46,17 @@ export const CreateItemSchema = z.object({
   date: z.string().optional(),
   DOI: z.string().optional(),
   url: z.string().url().optional(),
-  tags: z.array(z.string()).optional(),
+  tags: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          tag: z.string().min(1),
+          type: z.union([z.literal(0), z.literal(1)]).optional(),
+        }),
+      ])
+    )
+    .optional(),
   collections: z.array(z.string()).optional(),
 });
 
@@ -66,16 +76,6 @@ export const GenerateCitationSchema = z.object({
   style: z.string().min(1),
   format: z.enum(['text', 'html']).optional().default('text'),
   locale: z.string().optional().default('en-US'),
-});
-
-export const ExtractPdfTextSchema = z.object({
-  itemKey: z.string().min(1),
-  pages: z
-    .object({
-      start: z.number().min(1).optional(),
-      end: z.number().min(1).optional(),
-    })
-    .optional(),
 });
 
 export const ManageCollectionsSchema = z

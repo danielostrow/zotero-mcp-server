@@ -4,7 +4,6 @@
  */
 
 import type { ZoteroClient } from '../services/zotero-client.js';
-import type { PDFExtractor } from '../services/pdf-extractor.js';
 import {
   SearchItemsSchema,
   GetItemSchema,
@@ -12,11 +11,43 @@ import {
   UpdateItemSchema,
   DeleteItemsSchema,
   GenerateCitationSchema,
-  ExtractPdfTextSchema,
   ManageCollectionsSchema,
   ManageTagsSchema,
 } from '../utils/validators.js';
 import { formatErrorForMCP } from '../utils/error-handler.js';
+
+function getItemData(item: any): any {
+  return item?.data ?? item ?? {};
+}
+
+function getCollectionData(collection: any): any {
+  return collection?.data ?? collection ?? {};
+}
+
+function normalizeTags(tags: any[]): Array<{ tag: string; type?: number }> {
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .map((tag) => {
+      if (!tag) return null;
+      if (typeof tag === 'string') return { tag, type: 1 };
+      if (typeof tag === 'object' && typeof tag.tag === 'string') {
+        return { tag: tag.tag, type: tag.type ?? 1 };
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{ tag: string; type?: number }>;
+}
+
+function normalizeDoi(input?: string): string | null {
+  if (!input) return null;
+  let doi = input.trim();
+  if (!doi) return null;
+  doi = doi.replace(/^doi:\s*/i, '');
+  doi = doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+  doi = doi.replace(/^doi\.org\//i, '');
+  doi = doi.trim();
+  return doi ? doi.toLowerCase() : null;
+}
 
 /**
  * Search and retrieve items from Zotero library
@@ -29,6 +60,7 @@ export async function searchItems(params: any, zoteroClient: ZoteroClient): Prom
       limit: validated.limit,
       sort: validated.sort,
       direction: validated.direction,
+      format: validated.format,
     };
 
     if (validated.query) searchParams.q = validated.query;
@@ -38,7 +70,24 @@ export async function searchItems(params: any, zoteroClient: ZoteroClient): Prom
     if (validated.collection) searchParams.collection = validated.collection;
     if (validated.start) searchParams.start = validated.start;
 
-    const items = await zoteroClient.searchItems(searchParams);
+    const isJson = !validated.format || validated.format === 'json';
+    if (!isJson) {
+      const text = validated.collection
+        ? await zoteroClient.searchItemsInCollectionRaw(validated.collection, searchParams)
+        : await zoteroClient.searchItemsRaw(searchParams);
+      return {
+        content: [
+          {
+            type: 'text',
+            text,
+          },
+        ],
+      };
+    }
+
+    const items = validated.collection
+      ? await zoteroClient.searchItemsInCollection(validated.collection, searchParams)
+      : await zoteroClient.searchItems(searchParams);
 
     return {
       content: [
@@ -48,17 +97,17 @@ export async function searchItems(params: any, zoteroClient: ZoteroClient): Prom
             {
               count: items.length,
               items: items.map((item) => ({
-                key: item.key,
-                version: item.version,
-                itemType: item.data.itemType,
-                title: item.data.title,
-                creators: item.data.creators,
-                date: item.data.date,
-                DOI: item.data.DOI,
-                url: item.data.url,
-                tags: item.data.tags,
-                collections: item.data.collections,
-                abstractNote: item.data.abstractNote,
+                key: item.key ?? item.data?.key,
+                version: item.version ?? item.data?.version,
+                itemType: getItemData(item).itemType,
+                title: getItemData(item).title,
+                creators: getItemData(item).creators,
+                date: getItemData(item).date,
+                DOI: getItemData(item).DOI,
+                url: getItemData(item).url,
+                tags: getItemData(item).tags,
+                collections: getItemData(item).collections,
+                abstractNote: getItemData(item).abstractNote,
               })),
             },
             null,
@@ -84,21 +133,57 @@ export async function getItem(params: any, zoteroClient: ZoteroClient): Promise<
 
     let item;
     if (validated.itemKey) {
-      item = await zoteroClient.getItem(validated.itemKey);
+      item = await zoteroClient.getItemWithFormat(validated.itemKey, {
+        format: validated.format,
+        include: validated.include,
+      });
     } else if (validated.doi) {
       // Search by DOI
-      const items = await zoteroClient.searchItems({ q: validated.doi });
-      item = items.find((i) => i.data.DOI === validated.doi);
-      if (!item) {
+      const normalized = normalizeDoi(validated.doi);
+      const candidates = Array.from(
+        new Set([validated.doi, normalized].filter(Boolean) as string[])
+      );
+
+      let matched: any | undefined;
+      for (const candidate of candidates) {
+        const items = (await zoteroClient.searchItems({
+          q: candidate,
+          qmode: 'everything',
+          limit: 25,
+          sort: 'dateAdded',
+          direction: 'desc',
+        })) as any[];
+
+        matched = items.find((i) => {
+          const itemDoi = normalizeDoi(i?.data?.DOI ?? i?.DOI);
+          return itemDoi && normalized && itemDoi === normalized;
+        });
+
+        if (matched) break;
+      }
+
+      if (!matched && normalized) {
+        matched = await zoteroClient.findItemByDOI(normalized, { maxPages: 3, pageSize: 100 });
+      }
+
+      if (!matched) {
         throw new Error(`No item found with DOI: ${validated.doi}`);
       }
+      const key = matched.key ?? matched.data?.key;
+      if (!key) {
+        throw new Error(`No item key found for DOI: ${validated.doi}`);
+      }
+      item = await zoteroClient.getItemWithFormat(key, {
+        format: validated.format,
+        include: validated.include,
+      });
     }
 
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(item, null, 2),
+          text: typeof item === 'string' ? item : JSON.stringify(item, null, 2),
         },
       ],
     };
@@ -120,7 +205,8 @@ export async function generateCitation(params: any, zoteroClient: ZoteroClient):
     const citation = await zoteroClient.generateCitation(
       validated.itemKeys,
       validated.style,
-      validated.format
+      validated.format,
+      validated.locale
     );
 
     return {
@@ -128,39 +214,6 @@ export async function generateCitation(params: any, zoteroClient: ZoteroClient):
         {
           type: 'text',
           text: citation,
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [{ type: 'text', text: formatErrorForMCP(error) }],
-      isError: true,
-    };
-  }
-}
-
-/**
- * Extract PDF full-text content
- */
-export async function extractPdfText(params: any, pdfExtractor: PDFExtractor): Promise<any> {
-  try {
-    const validated = ExtractPdfTextSchema.parse(params);
-
-    const result = await pdfExtractor.extractText(validated.itemKey, validated.pages);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            {
-              content: result.content,
-              numPages: result.numPages,
-              info: result.info,
-            },
-            null,
-            2
-          ),
         },
       ],
     };
@@ -183,10 +236,19 @@ export async function createItem(params: any, zoteroClient: ZoteroClient): Promi
     const template = await zoteroClient.getItemTemplate(validated.itemType);
 
     // Merge template with provided data
-    const itemData = {
+    const itemData: any = {
       ...template,
       ...validated,
     };
+
+    if (validated.tags) {
+      const normalized = normalizeTags(validated.tags as any[]);
+      if (normalized.length > 0) {
+        itemData.tags = normalized;
+      } else {
+        delete itemData.tags;
+      }
+    }
 
     const created = await zoteroClient.createItem(itemData);
 
@@ -252,7 +314,7 @@ export async function deleteItems(params: any, zoteroClient: ZoteroClient): Prom
   try {
     const validated = DeleteItemsSchema.parse(params);
 
-    await zoteroClient.deleteItems(validated.itemKeys);
+    await zoteroClient.deleteItems(validated.itemKeys, validated.version);
 
     return {
       content: [
@@ -297,8 +359,45 @@ export async function manageCollections(params: any, zoteroClient: ZoteroClient)
       case 'create':
         result = await zoteroClient.createCollection(validated.name!, validated.parentCollection);
         break;
+      case 'update':
+        if (!validated.version) {
+          const collection = await zoteroClient.getCollection(validated.collectionKey!);
+          const collectionData = getCollectionData(collection);
+          const version = collection?.version ?? collectionData?.version;
+          if (version == null) {
+            throw new Error('Collection version is required to update');
+          }
+          result = await zoteroClient.updateCollection(
+            validated.collectionKey!,
+            {
+              name: validated.name!,
+              parentCollection: validated.parentCollection,
+            },
+            version
+          );
+        } else {
+          result = await zoteroClient.updateCollection(
+            validated.collectionKey!,
+            {
+              name: validated.name!,
+              parentCollection: validated.parentCollection,
+            },
+            validated.version
+          );
+        }
+        break;
       case 'delete':
-        await zoteroClient.deleteCollection(validated.collectionKey!);
+        if (!validated.version) {
+          const collection = await zoteroClient.getCollection(validated.collectionKey!);
+          const collectionData = getCollectionData(collection);
+          const version = collection?.version ?? collectionData?.version;
+          if (version == null) {
+            throw new Error('Collection version is required to delete');
+          }
+          await zoteroClient.deleteCollection(validated.collectionKey!, version);
+        } else {
+          await zoteroClient.deleteCollection(validated.collectionKey!, validated.version);
+        }
         result = { success: true, deleted: validated.collectionKey };
         break;
       default:
@@ -338,12 +437,16 @@ export async function manageTags(params: any, zoteroClient: ZoteroClient): Promi
       case 'remove_from_item':
         // Get the item first
         const item = await zoteroClient.getItem(validated.itemKey!);
-        const currentTags = item.data.tags || [];
+        const itemData = getItemData(item);
+        const currentTags = normalizeTags(itemData.tags || []);
 
         let newTags;
         if (validated.action === 'add_to_item') {
           const tagsToAdd = validated.tags || [validated.tag!];
-          newTags = [...currentTags, ...tagsToAdd.map((tag) => ({ tag, type: validated.type || 1 }))];
+          const incoming = normalizeTags(tagsToAdd.map((tag) => ({ tag, type: validated.type || 1 })));
+          const tagMap = new Map<string, { tag: string; type?: number }>();
+          [...currentTags, ...incoming].forEach((t) => tagMap.set(t.tag, t));
+          newTags = Array.from(tagMap.values());
         } else {
           const tagsToRemove = validated.tags || [validated.tag!];
           newTags = currentTags.filter((t) => !tagsToRemove.includes(t.tag));
@@ -353,10 +456,43 @@ export async function manageTags(params: any, zoteroClient: ZoteroClient): Promi
         const updated = await zoteroClient.updateItem(
           validated.itemKey!,
           { tags: newTags },
-          item.version
+          item.version ?? itemData.version
         );
         result = { success: true, item: updated };
         break;
+      case 'delete': {
+        const tagToDelete = validated.tag!;
+        let start = 0;
+        const limit = 100;
+        let updatedItems = 0;
+        let removedTags = 0;
+
+        while (true) {
+          const items = await zoteroClient.searchItems({ tag: tagToDelete, limit, start });
+          if (!items.length) break;
+
+          for (const found of items) {
+            const foundData = getItemData(found);
+            const current = normalizeTags(foundData.tags || []);
+            const filtered = current.filter((t) => t.tag !== tagToDelete);
+            if (filtered.length === current.length) continue;
+
+            const itemKey = found.key ?? foundData.key;
+            const version = found.version ?? foundData.version;
+            if (!itemKey || version == null) continue;
+
+            await zoteroClient.updateItem(itemKey, { tags: filtered }, version);
+            updatedItems += 1;
+            removedTags += current.length - filtered.length;
+          }
+
+          if (items.length < limit) break;
+          start += items.length;
+        }
+
+        result = { success: true, tag: tagToDelete, updatedItems, removedTags };
+        break;
+      }
       default:
         throw new Error(`Unknown action: ${validated.action}`);
     }
