@@ -38,6 +38,17 @@ function normalizeTags(tags: any[]): Array<{ tag: string; type?: number }> {
     .filter(Boolean) as Array<{ tag: string; type?: number }>;
 }
 
+function normalizeDoi(input?: string): string | null {
+  if (!input) return null;
+  let doi = input.trim();
+  if (!doi) return null;
+  doi = doi.replace(/^doi:\s*/i, '');
+  doi = doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+  doi = doi.replace(/^doi\.org\//i, '');
+  doi = doi.trim();
+  return doi ? doi.toLowerCase() : null;
+}
+
 /**
  * Search and retrieve items from Zotero library
  */
@@ -128,12 +139,33 @@ export async function getItem(params: any, zoteroClient: ZoteroClient): Promise<
       });
     } else if (validated.doi) {
       // Search by DOI
-      const items = (await zoteroClient.searchItems({
-        q: validated.doi,
-        qmode: 'everything',
-        limit: 10,
-      })) as any[];
-      const matched = items.find((i) => i.data?.DOI === validated.doi);
+      const normalized = normalizeDoi(validated.doi);
+      const candidates = Array.from(
+        new Set([validated.doi, normalized].filter(Boolean) as string[])
+      );
+
+      let matched: any | undefined;
+      for (const candidate of candidates) {
+        const items = (await zoteroClient.searchItems({
+          q: candidate,
+          qmode: 'everything',
+          limit: 25,
+          sort: 'dateAdded',
+          direction: 'desc',
+        })) as any[];
+
+        matched = items.find((i) => {
+          const itemDoi = normalizeDoi(i?.data?.DOI ?? i?.DOI);
+          return itemDoi && normalized && itemDoi === normalized;
+        });
+
+        if (matched) break;
+      }
+
+      if (!matched && normalized) {
+        matched = await zoteroClient.findItemByDOI(normalized, { maxPages: 3, pageSize: 100 });
+      }
+
       if (!matched) {
         throw new Error(`No item found with DOI: ${validated.doi}`);
       }
@@ -204,10 +236,19 @@ export async function createItem(params: any, zoteroClient: ZoteroClient): Promi
     const template = await zoteroClient.getItemTemplate(validated.itemType);
 
     // Merge template with provided data
-    const itemData = {
+    const itemData: any = {
       ...template,
       ...validated,
     };
+
+    if (validated.tags) {
+      const normalized = normalizeTags(validated.tags as any[]);
+      if (normalized.length > 0) {
+        itemData.tags = normalized;
+      } else {
+        delete itemData.tags;
+      }
+    }
 
     const created = await zoteroClient.createItem(itemData);
 

@@ -190,6 +190,44 @@ export class ZoteroClient {
   }
 
   /**
+   * Find a single item by DOI by scanning recent items.
+   * This avoids relying solely on the search index, which can lag behind writes.
+   */
+  async findItemByDOI(
+    doi: string,
+    options: { maxPages?: number; pageSize?: number } = {}
+  ): Promise<ZoteroItem | null> {
+    const normalized = doi.trim().toLowerCase();
+    if (!normalized) return null;
+
+    const maxPages = options.maxPages ?? 3;
+    const pageSize = options.pageSize ?? 100;
+    let start = 0;
+
+    for (let page = 0; page < maxPages; page++) {
+      const items = await this.searchItems({
+        limit: pageSize,
+        start,
+        sort: 'dateAdded',
+        direction: 'desc',
+      });
+
+      for (const item of items) {
+        const data = (item as any)?.data ?? item ?? {};
+        const itemDoi = typeof data.DOI === 'string' ? data.DOI.trim().toLowerCase() : '';
+        if (itemDoi && itemDoi === normalized) {
+          return item;
+        }
+      }
+
+      if (items.length < pageSize) break;
+      start += items.length;
+    }
+
+    return null;
+  }
+
+  /**
    * Search items within a collection (uses collection endpoint)
    */
   async searchItemsInCollection(
@@ -339,9 +377,24 @@ export class ZoteroClient {
         .items()
         .post([itemData], { signal });
 
+      if (typeof response?.isSuccess === 'function' && !response.isSuccess()) {
+        const errors = typeof response.getErrors === 'function' ? response.getErrors() : undefined;
+        const firstError = errors ? Object.values(errors)[0] : null;
+        const message =
+          firstError && typeof firstError === 'object'
+            ? `${(firstError as any).code ?? 'Error'}: ${(firstError as any).message ?? 'Unknown error'}`
+            : 'Unknown error';
+        throw new Error(`Create item failed: ${message}`);
+      }
+
       const results = response.getData();
       // zotero-api-client returns an array for multi-write operations
-      return (Array.isArray(results) ? results[0] : results) as ZoteroItem;
+      const first = (Array.isArray(results) ? results[0] : results) as ZoteroItem;
+      const key = (first as any)?.key ?? (first as any)?.data?.key;
+      if (!key) {
+        throw new Error('Create item failed: missing item key in response');
+      }
+      return first;
     });
 
     // Invalidate search caches

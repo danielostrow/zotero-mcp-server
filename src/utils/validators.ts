@@ -46,7 +46,17 @@ export const CreateItemSchema = z.object({
   date: z.string().optional(),
   DOI: z.string().optional(),
   url: z.string().url().optional(),
-  tags: z.array(z.string()).optional(),
+  tags: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          tag: z.string().min(1),
+          type: z.union([z.literal(0), z.literal(1)]).optional(),
+        }),
+      ])
+    )
+    .optional(),
   collections: z.array(z.string()).optional(),
 });
 
