@@ -10,8 +10,7 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    "QUICKSTART.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
