@@ -45,7 +45,7 @@ ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here zotero-manager
 或者使用 npx：
 
 ```bash
-ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here npx zotero-manager
+ZOTERO_API_KEY=your_api_key_here ZOTERO_USER_ID=your_user_id_here npx -y zotero-manager
 ```
 
 ### 源码 (Source)
@@ -78,9 +78,9 @@ node dist/index.js
 ```json
 {
   "mcpServers": {
-    "zotero": {
+    "zotero-manager": {
       "command": "npx",
-      "args": ["zotero-manager"],
+      "args": ["-y", "zotero-manager"],
       "env": {
         "ZOTERO_API_KEY": "your_api_key_here",
         "ZOTERO_USER_ID": "your_user_id_here"
@@ -95,9 +95,9 @@ node dist/index.js
 ```json
 {
   "mcpServers": {
-    "zotero": {
+    "zotero-manager": {
       "command": "node",
-      "args": ["/absolute/path/to/zotero-manager/dist/index.js"],
+      "args": ["/absolute/path/to/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your_api_key_here",
         "ZOTERO_USER_ID": "your_user_id_here"

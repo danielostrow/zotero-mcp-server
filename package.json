@@ -1,6 +1,6 @@
 {
   "name": "zotero-manager",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "MCP server for Zotero integration with AI assistants - search, cite, and manage research references",
   "type": "module",
   "main": "dist/index.js",
